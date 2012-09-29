@@ -3,16 +3,24 @@ require 'yaml'
 require 'stemmer'
 require 'classifier'
 
-bad_commits = YAML::load_file('bad_commits.yml')
-good_commits = YAML::load_file('vim_commits.yml').concat(YAML::load_file('linux_commits.yml'))
-classifier = Classifier::Bayes.new('bad', 'good')
+def extract_commits(path)
+  files = []
+  Dir.foreach(path) { |file| files << file }
+  files.select { |f| f != '.' && f !=  '..' }
+      .map { |f| YAML::load_file(path + f) }
+      .flatten
+end
 
-bad_commits.each { |commit| classifier.train_bad commit }
-good_commits.each { |commit| classifier.train_good commit }
+def train_classifier
+  extract_commits('data/training/bad_commits/').each { |commit| @classifier.train_bad commit }
+  extract_commits('data/training/good_commits/').each { |commit| @classifier.train_good commit }
+end
 
 if ARGV.length == 0
   $stderr.puts "Please provide a string to classify"
   exit 1
 end
 
-puts classifier.classify ARGV[0]
+@classifier = Classifier::Bayes.new('bad', 'good')
+train_classifier
+puts @classifier.classify ARGV[0]

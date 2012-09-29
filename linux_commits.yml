@@ -1,0 +1,487 @@
+---
+- "Pull powerpc fixes from Benjamin Herrenschmidt:
+ \"Here are a few powerpc fixes.  Arguably some of this should have come
+  to you earlier but I'm only just catching up after my medical leave.
+
+  Mostly these fixes regressions, a couple are long standing bugs.\"
+
+  powerpc: check_and_cede_processor() never cedes
+  powerpc/ftrace: Do not trace restore_interrupts()
+  powerpc: Fix Section mismatch warnings in prom_init.c
+  ppc64: fix missing to check all bits of _TIF_USER_WORK_MASK in preempt
+  powerpc: Fix uninitialised error in numa.c
+  powerpc: Fix BPF_JIT code to link with multiple TOCs"
+
+- "Pull x86 fixes from Ingo Molnar.
+
+  * 'x86-urgent-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip:
+    x86, cpufeature: Remove stray %s, add -w to mkcapflags.pl
+    x86, cpufeature: Catch duplicate CPU feature strings
+    x86, cpufeature: Rename X86_FEATURE_DTS to X86_FEATURE_DTHERM
+    x86: Fix kernel-doc warnings
+    x86, compat: Use test_thread_flag(TIF_IA32) in compat signal delivery"
+
+- "Pull oprofile fixlet from Ingo Molnar.
+
+  * 'perf-urgent-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip:
+    oprofile: perf: use NR_CPUS instead or nr_cpumask_bits for static array"
+
+
+- "Pull RCU fix from Ingo Molnar.
+
+  rcu_barrier() less disruptive\")
+
+  * 'core-urgent-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip:
+    rcu: Stop rcu_do_batch() from multiplexing the \"count\" variable"
+
+
+- "The following added support for powernv but broke pseries/BML:
+   1f1616e powerpc/powernv: Add TCE SW invalidation support
+
+  TCE_PCI_SW_INVAL was split into FREE and CREATE flags but the tests in
+
+  Signed-off-by: Michael Neuling <mikey@neuling.org>
+  cc: stable@kernel.org [v3.3+]
+  Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+
+
+  powerpc: check_and_cede_processor() never cedes
+
+  interrupts\") caused check_and_cede_processor to stop working.
+->irq_happened will never be zero right after a hard_irq_disable
+  so the compiler removes the call to cede_processor completely.
+
+  The bug was introduced back in the lazy interrupt handling rework
+  of 3.4 but was hidden until recently because hard_irq_disable did
+  nothing.
+
+  This issue will eventually appear in 3.4 stable since the
+  hard_irq_disable fix is marked stable, so mark this one for stable
+  too.
+
+  Signed-off-by: Anton Blanchard <anton@samba.org>
+  Cc: stable@vger.kernel.org
+  Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+
+
+  powerpc/ftrace: Do not trace restore_interrupts()
+
+  As I was adding code that affects all archs, I started testing function
+  tracer against PPC64 and found that it currently locks up with 3.4
+  kernel. I figured it was due to tracing a function that shouldn't be, so
+  I went through the following process to bisect to find the culprit:
+
+   cat /debug/tracing/available_filter_functions > t
+   num=`wc -l t`
+   sed -ne \"1,${num}p\" t > t1
+   let num=num+1
+   sed -ne \"${num},$p\" t > t2
+   cat t1 > /debug/tracing/set_ftrace_filter
+   echo function /debug/tracing/current_tracer
+   <failed? bisect t1, if not bisect t2>
+
+  It finally came down to this function: restore_interrupts()
+
+  I'm not sure why this locks up the system. It just seems to prevent
+  scheduling from occurring. Interrupts seem to still work, as I can ping
+  the box. But all user processes freeze.
+
+  When restore_interrupts() is not traced, function tracing works fine.
+
+  Cc: stable@kernel.org
+  Signed-off-by: Steven Rostedt <rostedt@goodmis.org>
+  Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+
+
+  powerpc: Fix Section mismatch warnings in prom_init.c
+
+  This patches tries to fix a couple of Section mismatch warnings like
+  following one:
+
+  WARNING: arch/powerpc/kernel/built-in.o(.text+0x2923c): Section mismatch
+  in reference from the function .prom_query_opal() to the
+  function .init.text:.call_prom()
+  The function .prom_query_opal() references
+  the function __init .call_prom().
+  This is often because .prom_query_opal lacks a __init
+  annotation or the annotation of .call_prom is wrong.
+
+  Signed-off-by: Li Zhong <zhong@linux.vnet.ibm.com>
+  Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+
+
+  ppc64: fix missing to check all bits of _TIF_USER_WORK_MASK in preempt
+
+  In entry_64.S version of ret_from_except_lite, you'll notice that
+  in the !preempt case, after we've checked MSR_PR we test for any
+  TIF flag in _TIF_USER_WORK_MASK to decide whether to go to do_work
+  or not. However, in the preempt case, we do a convoluted trick to
+  test SIGPENDING only if PR was set and always test NEED_RESCHED ...
+  but we forget to test any other bit of _TIF_USER_WORK_MASK !!! So
+  that means that with preempt, we completely fail to test for things
+  like single step, syscall tracing, etc...
+
+  This should be fixed as the following path:
+
+   - Test PR. If not set, go to resume_kernel, else continue.
+
+   - If go resume_kernel, to do that original do_work.
+
+   - If else, then always test for _TIF_USER_WORK_MASK to decide to do
+  that original user_work, else restore directly.
+
+  Signed-off-by: Tiejun Chen <tiejun.chen@windriver.com>
+  Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+
+
+  powerpc: Fix uninitialised error in numa.c
+
+  chroma_defconfig currently gives me this with gcc 4.6:
+    arch/powerpc/mm/numa.c:638:13: error: 'dm' may be used uninitialized in this function [-Werror=uninitialized]
+
+  It's a bogus warning/error since of_get_drconf_memory() only writes it
+  anyway.
+
+  Signed-off-by: Michael Neuling <mikey@neuling.org>
+  cc: <stable@kernel.org> [v3.3+]
+  Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+
+
+  powerpc: Fix BPF_JIT code to link with multiple TOCs
+
+  If the kernel is big enough (eg. allyesconfig), the linker may need to
+  switch TOCs when calling from the BPF JIT code out to the external
+  helpers (skb_copy_bits() & bpf_internal_load_pointer_neg_helper()).
+
+  In order to do that we need to leave space after the bl for the linker
+  to insert a reload of our TOC pointer.
+
+  Signed-off-by: Michael Ellerman <michael@ellerman.id.au>
+  Acked-by: Matt Evans <matt@ozlabs.org>
+  Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>"
+
+
+- "Pull hwmon changes from Guenter Roeck:
+
+  * tag 'hwmon-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/groeck/linux-staging:
+    hwmon: (applesmc) correct email address for Jesper Juhl"
+
+
+- "Pull watchdog fixes from Wim Van Sebroeck:
+   \"This fixes:
+     - the WDIOC_GETSTATUS return value
+     - the unregister of all NMI events on exit
+     - the loading of the iTCO_wdt driver after the conversion to the
+   lpc_ich mfd model.\"
+
+  * git://www.linux-watchdog.org/linux-watchdog:
+    watchdog: core: fix WDIOC_GETSTATUS return value
+    watchdog: hpwdt: Unregister NMI events on exit.
+    watchdog: iTCO_wdt: add platform driver module alias"
+
+
+- "Pull UDF fixes from Jan Kara:
+   \"Make UDF more robust in presence of corrupted filesystem\"
+
+  * 'for_linus' of git://git.kernel.org/pub/scm/linux/kernel/git/jack/linux-fs:
+    udf: Fortify loading of sparing table
+    udf: Avoid run away loop when partition table length is corrupted
+    udf: Use 'ret' instead of abusing 'i' in udf_load_logicalvol()"
+
+
+- "Pull ubi/ubifs fixes from Artem Bityutskiy:
+   \"Fix the debugfs regression - we never enable it because incorrect
+    'IS_ENABLED()' macro usage: should be 'IS_ENABLED(CONFIG_DEBUG_FS)',
+    but we had 'IS_ENABLED(DEBUG_FS)'.  Also fix incorrect assertion.\"
+
+  * tag 'upstream-3.5-rc5' of git://git.infradead.org/linux-ubifs:
+    UBI: correct usage of IS_ENABLED()
+    UBIFS: correct usage of IS_ENABLED()
+    UBIFS: fix assertion
+
+
+  watchdog: core: fix WDIOC_GETSTATUS return value
+
+  a wrapper for the WDIOC_GETSTATUS ioctl call. The code results
+  however in a different behaviour: it returns an error if the
+  driver doesn't support the status operation. This is not
+  according to the API that says that when we don't support
+  the status operation, that we just should return a 0 value.
+  Only when the device isn't there anymore, we should return an
+  error.
+
+  Signed-off-by: Wim Van Sebroeck <wim@iguana.be>
+
+
+  watchdog: hpwdt: Unregister NMI events on exit.
+
+  This patch is to unregister for NMI events upon exit. Also we are now
+  making the default setting for allow_kdump enabled.
+
+  Signed-off-by: Thomas Mingarelli <thomas.mingarelli@hp.com>
+  Signed-off-by: Wim Van Sebroeck <wim@iguana.be>
+
+
+  watchdog: iTCO_wdt: add platform driver module alias
+
+  The recent conversion of iTCO_wdt resulted in the driver no longer
+  getting loaded automatically, since it no longer has a
+  MODULE_DEVICE_TABLE() included. As the lpc_ich driver now creates a
+  platform device, auto-loading can easily be done by having a respective
+  module alias in place.
+
+  Signed-off-by: Jan Beulich <jbeulich@suse.com>
+  Cc: Aaron Sierra <asierra@xes-inc.com>
+  Acked-by: Guenter Roeck <linux@roeck-us.net>
+  Cc: Samuel Ortiz <sameo@linux.intel.com>
+  Signed-off-by: Wim Van Sebroeck <wim@iguana.be>"
+
+
+- "Pull drm fixes from Dave Airlie:
+   \"Nearly all intel, one missing license header in nouveau, nothing
+    majorly earth shattering.\"
+
+  * 'drm-fixes' of git://people.freedesktop.org/~airlied/linux:
+    Revert \"drm/i915: allow PCH PWM override on IVB\"
+    drm/nouveau: add license header to prime.
+    drm/i915: Fix eDP blank screen after S3 resume on HP desktops
+    drm/i915: rip out the PM_IIR WARN"
+
+
+- "Pull SuperH fixes from Paul Mundt.
+
+  * tag 'sh-for-linus' of git://github.com/pmundt/linux-sh:
+    sh: Convert sh_clk_mstp32_register to sh_clk_mstp_register
+    sh: kfr2r09: fix compile breakage"
+
+
+- "
+   1) Pairing and deadlock fixes in bluetooth from Johan Hedberg.
+
+   2) Add device IDs for AR3011 and AR3012 bluetooth chips.  From
+  Giancarlo Formicuccia and Marek Vasut.
+
+   3) Fix wireless regulatory deadlock, from Eliad Peller.
+
+   4) Fix full TX ring panic in bnx2x driver, from Eric Dumazet.
+
+  erratic bonding behavior with UDP clients and the gains it used to
+  give are mostly no longer happening due to how BQL works.  From Eric
+  Dumazet.
+
+   6) It took two tries, but Thomas Graf fixed a problem wherein we
+  registered ipv6 routing procfs files before their backend data were
+  initialized properly.
+
+   7) Fix max GSO size setting in be2net, from Sarveshwar Bandi.
+
+   8) PHY device id mask is wrong for KSZ9021 and KS8001 chips, fix from
+  Jason Wang.
+
+   9) Fix use of stale SKB data pointer after skb_linearize() call in
+  batman-adv, from Antonio Quartulli.
+
+  10) Fix memory leak in IXGBE due to missing __GFP_COMP, from Alexander
+  Duyck.
+
+  11) Fix probing of Gobi devices in qmi_wwan usbnet driver, from Bjørn
+  Mork.
+
+  12) Fix suspend/resume and open failure handling in usbnet from Ming
+  Lei.
+
+  13) Attempt to fix device r8169 hangs for certain chips, from Francois
+  Romieu.
+
+  14) Fix advancement of RX dirty pointer in some situations in sh_eth
+  driver, from Yoshihiro Shimoda.
+
+  15) Attempt to fix restart of IPV6 routing table dumps when there is an
+
+  16) Respect security_inet_conn_request() return value in ipv6 TCP.  From
+  Neal Cardwell.
+
+  17) Add another iPAD device ID to ipheth driver, from Davide Gerhard.
+
+  18) Fix access to freed SKB in l2tp_eth_dev_xmit(), and fix l2tp lockdep
+  splats, from Eric Dumazet.
+
+  19) Make sure all bridge devices, regardless of whether they were
+  created via netlink or ioctls, have their rtnetlink ops hooked up.
+  From Thomas Graf and Stephen Hemminger.
+
+    9p: fix min_t() casting in p9pdu_vwritef()
+    can: flexcan: use be32_to_cpup to handle the value of dt entry
+    xen/netfront: teardown the device before unregistering it.
+    bridge: Assign rtnl_link_ops to bridge devices created via ioctl (v2)
+    vhost: use USER_DS in vhost_worker thread
+    ixgbe: Do not pad FCoE frames as this can cause issues with FCoE DDP
+    net: l2tp_eth: use LLTX to avoid LOCKDEP splats
+    mac802154: add missed braces
+    net: l2tp_eth: fix l2tp_eth_dev_xmit race
+    net/mlx4_en: Release QP range in free_resources
+    net/mlx4: Use single completion vector after NOP failure
+    net/mlx4_en: Set correct port parameters during device initialization
+    ipheth: add support for iPad
+    caif-hsi: Add missing return in error path
+    caif-hsi: Bugfix - Piggyback'ed embedded CAIF frame lost
+    caif: Clear shutdown mask to zero at reconnect.
+    tcp: heed result of security_inet_conn_request() in tcp_v6_conn_request()
+    ipv6: fib: fix fib dump restart
+    batman-adv: fix race condition in TT full-table replacement
+    batman-adv: only drop packets of known wifi clients
+    ...
+
+
+  udf: Fortify loading of sparing table
+
+  Add sanity checks when loading sparing table from disk to avoid accessing
+  unallocated memory or writing to it.
+
+  Signed-off-by: Jan Kara <jack@suse.cz>
+
+
+  udf: Avoid run away loop when partition table length is corrupted
+
+  Check provided length of partition table so that (possibly maliciously)
+  corrupted partition table cannot cause accessing data beyond current buffer.
+
+  Signed-off-by: Jan Kara <jack@suse.cz>
+
+
+  udf: Use 'ret' instead of abusing 'i' in udf_load_logicalvol()
+
+  Signed-off-by: Jan Kara <jack@suse.cz>"
+
+
+- "
+  sh: Convert sh_clk_mstp32_register to sh_clk_mstp_register
+
+  sh_clk_mstp32_register is deprecated. This convert to sh_clk_mstp_register.
+
+  Signed-off-by: Nobuhiro Iwamatsu <nobuhiro.iwamatsu.yj@renesas.com>
+  Signed-off-by: Paul Mundt <lethal@linux-sh.org>
+
+
+  sh: kfr2r09: fix compile breakage
+
+  Fix compile breakage caused by
+
+
+  sh: kfr2r09 evt2irq migration.
+
+  Signed-off-by: Guennadi Liakhovetski <g.liakhovetski@gmx.de>
+  Signed-off-by: Paul Mundt <lethal@linux-sh.org>"
+
+
+- "Marc Kleine-Budde says:
+
+  ====================
+  here's a patch intended for v3.5, targeting net/master. Hui Wang has
+  found and fixed an endianness problem in the device tree handling in
+  the flexcan driver.
+  ====================
+
+  Signed-off-by: David S. Miller <davem@davemloft.net>
+
+
+  9p: fix min_t() casting in p9pdu_vwritef()
+
+  I don't think we're actually likely to hit this limit but if we do
+  then the comparison should be done as size_t.  The original code
+  is equivalent to:
+  len = strlen(sptr) % USHRT_MAX;
+
+  Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+  Signed-off-by: David S. Miller <davem@davemloft.net>"
+
+
+- "Pull USB fixes from Greg Kroah-Hartman:
+   \"Here are some small USB gadget bugfixes, and a few new USB device ids
+    added to some drivers for the 3.5-rc5 release.
+
+    Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>\"
+
+  * tag 'usb-3.5-rc5' of git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/usb:
+    USB: CP210x Add 10 Device IDs
+    USB: option: Add USB ID for Novatel Ovation MC551
+    usb: phy: Fix Kconfig dependency for Phy drivers
+    SCSI & usb-storage: add try_rc_10_first flag
+    usb: musb: host: release dma channels if no active io
+    usb: gadget: lpc32xx_udc: fix build error with debugfs enabled
+    usb: otg: twl6030-usb: Fix twl writes
+    USB: option: add id for Cellient MEN-200
+    usb: dwc3: fix giveback of queued request in ep_dequeue
+    usb: gadget: Complete fsl qe/udc driver conversion"
+
+
+- "Pull sound fixes from Takashi Iwai:
+   \"Here you find quite a few changes for HD-audio and a copule of quirk
+    additions for USB-audio.  All reasonably small and/or trivial.\"
+
+  * tag 'sound-3.5' of git://git.kernel.org/pub/scm/linux/kernel/git/tiwai/sound:
+    ALSA: hda - Fix power-map regression for HP dv6 & co
+    ALSA: hda - Initialize caches at codec reconfiguration
+    ALSA: hda - Fix memory leaks at module unload
+    ALSA: hda - Fix memory leaks in Realtek & Conexant codec parsers
+    ALSA: hda - Add Realtek ALC280 codec support
+    ALSA: hda - Remove obsoleted CONFIG_SND_HDA_ENABLE_REALTEK_QUIRKS
+    ASoC: wm8994: remove duplicate code
+    ALSA: usb-audio: add BOSS GT-100 support
+    ALSA: HDA: Add inverted internal mic quirk for Lenovo S205
+    ALSA: hda - Fix ALC272X codec detection
+    ALSA: snd_usb_audio: ignore ctrl errors on QuickCam Pro for Notebooks
+    ALSA: snd_usb_audio: ignore ctrl errors on QuickCam E3500"
+
+
+- "Pull a m68knommu fix from Greg Ungerer:
+   \"It contains a single fix for breakage using the Freescale FEC eth
+    driver on ColdFire CPUs.\"
+
+  * 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/gerg/m68knommu:
+    m68knommu: define a local devm_clk_get() function"
+
+
+- "Pull MMC fixes from Chris Ball:
+
+   - omap_hsmmc: Using AUTO_CMD12 (enabled by default in 3.5-rc1) has
+     been found to cause data corruption on the BeagleBoard, but no
+     other OMAP boards so far.  Revert the patch until there's a root
+     cause explanation that makes sense, at which point we might
+     decide to use a blacklist or whitelist.
+
+   - mmc_block: Fix incorrect data timeouts for the case of multiblock
+     (ACMD22) writes for block-addressed cards.
+
+  * tag 'mmc-fixes-for-3.5-rc5' of git://git.kernel.org/pub/scm/linux/kernel/git/cjb/mmc:
+    Revert \"mmc: omap_hsmmc: Enable Auto CMD12\"
+    mmc: block: fix the data timeout issue with ACMD22"
+
+
+- "Pull clk common framework fixes from Mike Turquette:
+   \"This contains three NULL pointer fixes and two device regression
+    fixups.
+
+    Two NULL pointer dereferences were in the common clk core due to lack
+    of sanity checking and the third NPD was in the mxs-specific clock
+    code due to incorrect use of __initdata.
+
+    The device regressions were the result of improper data: a wrong
+    string name for matching DT data broke the SPEAr ethernet controller
+    and another string matching problem in the mxs clock data resulted in
+    a broken MMC controller.\"
+
+  * tag 'clk-fixes-for-linus' of git://git.linaro.org/people/mturquette/linux:
+    clk: mxs: fix clock lookup after freeing init memory
+    clk: mxs: fix ref_io clock definition
+    clk: Check parent for NULL in clk_change_rate
+    clk: Allow late cache allocation for clk->parents
+    clk: SPEAr600: Fix ethernet clock name for DT based probing
+
+
+  chmod +x scripts/gfp-translate
+
+  This script lacks an executable bit.
+
+  Signed-off-by: Dave Jones <davej@redhat.com>
+  Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>"

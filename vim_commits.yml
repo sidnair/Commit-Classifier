@@ -1,0 +1,41 @@
+---
+- "maputils.js: add fixes for leaflet.
+Fixes bug in upcoming Chrome"
+- "Change submodule remote urls"
+- "vimrc: map \ to ,"
+- "vimrc: add shortcuts for resizing splits"
+- "molokai color tweaks"
+- "vimrc: save more command line history"
+- "vimrc.example.*: add separate example vimrc.mine for Macs"
+- "-Set default js syntax checker to jshint"
+- "less: change less plugins"
+- "Change default *.tex settings"
+- "README: explain gdefault"
+- "vimrc: global search by default"
+- "vimrc: enable comment wrapping by default"
+- "python: stop highlighting long lines"
+- "vimrc: make syntastic ignore html files
+
+Lift tags break the syntax checking."
+- "vimrc: find ctags tags file"
+- "vimrc: adjust timeout settings"
+- "c: make tabstop 8 spaces"
+- "vimrc: move personal ctrlp settings to vimrc.mine
+
+Optimizations to ctrlp for large projects moved to vimrc.mine since most
+people won't want them"
+- "vimrc: keybinding additions/tweaks"
+- "vimrc: remove trailing whitespace"
+- "vimrc: save/restore view on buffer open/close"
+- "vimrc: allow cursor one beyond last char"
+- "vimrc: shorter timeout on commands"
+- "vimrc: save more commands in history"
+- "Add snipmate-snippets plugin"
+- "Add tmux syntax plugin"
+- "Add ack plugin"
+- "soy: add automatic comment formatting
+
+Set 'formatoptions' to break comment lines but not other lines, and
+insert the comment leader when hitting <CR> or using \"o\"."
+- "vimrc: remove call to HighlightLongLines"
+- "Add solarized colors"

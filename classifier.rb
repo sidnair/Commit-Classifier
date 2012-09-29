@@ -3,20 +3,24 @@ require 'yaml'
 require 'stemmer'
 require 'classifier'
 
-def extract_commits(path)
+def extract_commits(path, do_tests)
   files = []
   Dir.foreach(path) { |file| files << file }
   commits = files.select { |f| f != '.' && f !=  '..' }
       .map { |f| YAML::load_file(path + f) }
       .flatten
       .shuffle
-  split_point = (commits.length * 0.9).floor
-  [commits[0...split_point], commits[split_point...commits.length]]
+  if do_tests
+    split_point = (commits.length * 0.9).floor
+    [commits[0...split_point], commits[split_point...commits.length]]
+  else
+    [commits, []]
+  end
 end
 
-def get_data
-  @training_bad, @testing_bad = extract_commits('data/bad_commits/')
-  @training_good, @testing_good = extract_commits('data/good_commits/')
+def get_data(do_tests)
+  @training_bad, @testing_bad = extract_commits('data/bad_commits/', do_tests)
+  @training_good, @testing_good = extract_commits('data/good_commits/', do_tests)
 end
 
 def train_classifier
@@ -57,7 +61,12 @@ def get_counts(commits)
   end
 end
 
+do_tests = (ARGV.length == 0)
 @classifier = Classifier::Bayes.new('bad', 'good')
-get_data
+get_data(do_tests)
 train_classifier
-test_classifier
+if do_tests
+  test_classifier
+else
+  puts @classifier.classify ARGV[0]
+end

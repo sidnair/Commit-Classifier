@@ -352,8 +352,6 @@
   udf: Use 'ret' instead of abusing 'i' in udf_load_logicalvol()
 
   Signed-off-by: Jan Kara <jack@suse.cz>"
-
-
 - "
   sh: Convert sh_clk_mstp32_register to sh_clk_mstp_register
 

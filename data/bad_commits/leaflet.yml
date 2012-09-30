@@ -1,0 +1,7 @@
+---
+- "Fix #916"
+- "fix IE9 regression (sorry!)"
+- "IE needs translate(0,0) hack to animate right too. Fixes #870. (Fix found by oliverheilig, thanks!)"
+- "improve geojson example more"
+- "Add a page for testing opacity works."
+- "Refs danzel/Leaflet.markercluster#24"

@@ -28,45 +28,61 @@ def train_classifier
   @training_good.each { |commit| @classifier.train_good commit }
 end
 
-def test_classifier
+def test_classifier(verbose)
   def format_ratio(ratio)
     "%2.2f\%" % (ratio * 100).to_s
   end
   false_good, true_bad = get_counts(@testing_bad)
   true_good, false_bad = get_counts(@testing_good)
 
-  correct = true_good + true_bad
-  total = correct + false_bad + false_good
+  correct = true_good.length + true_bad.length
+  total = correct + false_bad.length + false_good.length
   ratio = format_ratio(1.0 * correct / total)
 
-  bad_total = false_good + true_bad
-  bad_ratio = format_ratio(1.0 * true_bad / bad_total)
+  bad_total = false_good.length + true_bad.length
+  bad_ratio = format_ratio(1.0 * true_bad.length / bad_total)
 
-  good_total = true_good + false_bad
-  good_ratio = format_ratio(1.0 * true_good / good_total)
+  good_total = true_good.length + false_bad.length
+  good_ratio = format_ratio(1.0 * true_good.length / good_total)
 
   puts "Accuracy: #{ratio} (#{correct} of #{total})"
-  puts "Bad commit accuracy: #{bad_ratio} (#{true_bad} of #{bad_total})"
-  puts "Good commit accuracy: #{good_ratio} (#{true_good} of #{good_total})"
+
+  puts "Bad commit accuracy: #{bad_ratio} (#{true_bad.length} of #{bad_total})"
+  print_failures(true_bad)
+
+  puts "Good commit accuracy: #{good_ratio} (#{true_good.length} of #{good_total})"
+  print_failures(true_good)
 end
 
-def get_counts(commits)
-  classifications = commits.map { |commit| @classifier.classify commit }
-  classifications.reduce([0, 0]) do |counts, classification|
-    if classification == 'Good'
-      [counts[0] + 1, counts[1]]
-    else
-      [counts[0], counts[1] + 1]
-    end
+def print_failures(arr)
+  if arr.length > 0
+    puts "Failures:"
+  end
+
+  arr.each do |bad|
+    puts "\t#{bad}"
   end
 end
 
-do_tests = (ARGV.length == 0)
+def get_counts(commits)
+  commits.reduce([[], []]) do |counts, commit|
+    classification = @classifier.classify(commit)
+    if classification == 'Good'
+      counts[0] << commit
+    else
+      counts[1] << commit
+    end
+    counts
+  end
+end
+
+do_tests = (ARGV[0] == '-t')
+verbose = (ARGV[1] == '-v')
 @classifier = Classifier::Bayes.new('bad', 'good')
 get_data(do_tests)
 train_classifier
 if do_tests
-  test_classifier
+  test_classifier(verbose)
 else
   puts @classifier.classify ARGV[0]
 end

@@ -28,7 +28,7 @@ def train_classifier
   @training_good.each { |commit| @classifier.train_good commit }
 end
 
-def test_classifier(verbose)
+def test_classifier()
   def format_ratio(ratio)
     "%2.2f\%" % (ratio * 100).to_s
   end
@@ -76,13 +76,19 @@ def get_counts(commits)
   end
 end
 
+if ARGV.length == 0
+  $stderr.puts 'Please do one of the following:'
+  $stderr.puts 'ruby classifier.rb -t // runs tests'
+  $stderr.puts 'ruby classifier.rb "commit message to check"'
+  exit 1
+end
+
 do_tests = (ARGV[0] == '-t')
-verbose = (ARGV[1] == '-v')
 @classifier = Classifier::Bayes.new('bad', 'good')
 get_data(do_tests)
 train_classifier
 if do_tests
-  test_classifier(verbose)
+  test_classifier
 else
   puts @classifier.classify ARGV[0]
 end
